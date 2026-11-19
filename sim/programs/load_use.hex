@@ -1,0 +1,12 @@
+// load-use hazard: a load followed straight away by an instruction that uses the loaded register
+0C05  // 0: LDI R0, 5
+2C40  // 1: ST  [R1+0] <- R0      mem[0] = 5
+0000  // 2: NOP
+0000  // 3: NOP
+0000  // 4: NOP
+2A40  // 5: LDM R2, [R1+0]        R2 = 5
+06A0  // 6: ADD R2, R2, R2        needs R2 the next cycle -> stall; expect R2 = 10
+0000  // 7: NOP
+0000  // 8: NOP
+0000  // 9: NOP
+3C00  // 10: HLT

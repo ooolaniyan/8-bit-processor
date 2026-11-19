@@ -1,0 +1,15 @@
+// branch base register hazard: BEQ uses R1 straight after R1 is written
+0D08  // 0: LDI R1, 8
+3404  // 1: BEQ R0, R0, +4        always taken; target = R1 + 4 = 12
+0EEE  // 2: LDI R2, 0xEE          wrong path, must be flushed
+3C00  // 3: HLT
+0EBB  // 4: LDI R2, 0xBB          reached only if BEQ used the stale R1 (0)
+3C00  // 5: HLT
+0000  // 6
+0000  // 7
+0000  // 8
+0000  // 9
+0000  // 10
+0000  // 11
+0F0A  // 12: LDI R3, 10           correct branch target
+3C00  // 13: HLT

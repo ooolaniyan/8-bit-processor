@@ -1,0 +1,5 @@
+// HLT must stop the processor: older instructions finish, younger ones never do
+0C01  // 0: LDI R0, 1             right before HLT, must still complete
+3C00  // 1: HLT
+0F77  // 2: LDI R3, 0x77          must not execute
+0E55  // 3: LDI R2, 0x55          must not execute

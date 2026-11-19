@@ -32,7 +32,8 @@ module hazard_unit(
     input [1:0]i_wb_addr,
     input i_wb_write,
     output reg [1:0] o_muxA_select,
-    output reg [1:0] o_muxB_select, 
+    output reg [1:0] o_muxB_select,
+    output reg [1:0] o_muxC_select,     // forwards R1, the base register for BEQ/BNEQ targets
     output reg o_pipeline_stall
         );
      //module to detect RAW hazards. When hazard detected, 
@@ -45,9 +46,21 @@ module hazard_unit(
      assign ex_read_rs1 = ( (i_idex_opcode) == 4'b0011 || (i_idex_opcode) == 4'b0) ? 1'b0 : 1'b1;  
      assign ex_read_rs2 = ( (i_idex_opcode) == 4'b1100 || (i_idex_opcode) == 4'b0011 || (i_idex_opcode) == 4'b0 || (i_idex_opcode) == 4'b0111 || (i_idex_opcode) == 4'b1010  ) ? 1'b0 : 1'b1;  
      
-        always @ (*) begin 
-            o_muxA_select = 2'b0; 
-            o_muxB_select = 2'b0; 
+     // branches also read R1 (GPR address 2'b01) for the target address
+     wire ex_read_r1base;
+     assign ex_read_r1base = ( (i_idex_opcode) == 4'b1101 || (i_idex_opcode) == 4'b1110 ) ? 1'b1 : 1'b0;
+
+        always @ (*) begin
+            o_muxA_select = 2'b0;
+            o_muxB_select = 2'b0;
+            o_muxC_select = 2'b0;
+
+            if( i_exmem_write && !i_exmem_read && (i_exmem_rd_addr == 2'b01) && ex_read_r1base)
+                o_muxC_select = 2'b01;
+            else if( i_memwb_write && (i_memwb_addr == 2'b01) && ex_read_r1base)
+                o_muxC_select = 2'b10;
+            else if( i_wb_write && (i_wb_addr == 2'b01) && ex_read_r1base)
+                o_muxC_select = 2'b11;
             o_pipeline_stall = 1'b0; 
             
             if( i_exmem_write && !i_exmem_read && (i_exmem_rd_addr == i_idex_rs1_addr) && ex_read_rs1) 
@@ -64,7 +77,7 @@ module hazard_unit(
             else if( i_wb_write && (i_wb_addr == i_idex_rs2_addr) && ex_read_rs2) 
                 o_muxB_select = 2'b11; 
                 
-            if( i_exmem_read && i_exmem_write && ( (ex_read_rs1 && (i_exmem_rd_addr == i_idex_rs1_addr) ) || (ex_read_rs2 && (i_exmem_rd_addr == i_idex_rs2_addr) ) ) )  begin
+            if( i_exmem_read && i_exmem_write && ( (ex_read_rs1 && (i_exmem_rd_addr == i_idex_rs1_addr) ) || (ex_read_rs2 && (i_exmem_rd_addr == i_idex_rs2_addr) ) || (ex_read_r1base && (i_exmem_rd_addr == 2'b01) ) ) )  begin
                 o_pipeline_stall = 1'b1; 
                 end
           end  

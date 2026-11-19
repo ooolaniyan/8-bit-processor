@@ -134,7 +134,8 @@ module Main_module(
     wire branch_taken, flag, alu_mem_write,alu_mem_read, reg_write, jmp, hlt; 
     
     reg [7:0] alu_muxA_output, alu_muxB_output; 
-    wire [1:0] alu_muxA_sel, alu_muxB_sel; 
+    wire [1:0] alu_muxA_sel, alu_muxB_sel, alu_muxC_sel;
+    reg [7:0] alu_muxC_output;                  // forwarded R1 for branch targets
     reg [7:0] mem_ALU_results, mem_st_data;
     reg [7:0] wb_reg_data;
     
@@ -162,7 +163,14 @@ module Main_module(
             alu_muxA_output = mem_ALU_results; 
         if(alu_muxB_sel == 2'b01)
             alu_muxB_output = mem_ALU_results;
-          
+
+        case(alu_muxC_sel)
+            2'b01:   alu_muxC_output = mem_ALU_results;
+            2'b10:   alu_muxC_output = wb_reg_data;
+            2'b11:   alu_muxC_output = wb_out_data;
+            default: alu_muxC_output = alu_GPR2_data;
+        endcase
+
     end
 
     ALU ALU_inst(
@@ -173,7 +181,7 @@ module Main_module(
     .i_reg2_addr(alu_reg2_addr),
     .i_operand0(alu_muxA_output),
     .i_operand1(alu_muxB_output),
-    .i_GPR2_data(alu_GPR2_data), 
+    .i_GPR2_data(alu_muxC_output),
     .o_ALU_regdest(ALU_regdest),
     .o_results(ALU_results),
     .o_st_data(ALU_st_data),
@@ -201,9 +209,23 @@ module Main_module(
             mem_reg_write <= 1'b0; 
             mem_jmp <= 1'b0; 
             mem_hlt <= 1'b0; 
-            mem_st_data <= 1'b0; 
+            mem_st_data <= 1'b0;
          end
-        else begin 
+        else if(pipeline_stall) begin
+            // load-use stall: the instruction in EX is held in ID/EX and will execute again
+            // next cycle, so insert a bubble here instead of letting this copy go through
+            mem_ALU_results <= 8'b0;
+            mem_dest <= 2'b0;
+            mem_branch_taken <= 1'b0;
+            mem_flag <= 1'b0;
+            mem_mem_write <= 1'b0;
+            mem_mem_read <= 1'b0;
+            mem_reg_write <= 1'b0;
+            mem_jmp <= 1'b0;
+            mem_hlt <= 1'b0;
+            mem_st_data <= 8'b0;
+        end
+        else begin
             mem_ALU_results <= ALU_results; 
             mem_dest <= ALU_regdest;
             mem_branch_taken <= branch_taken;
@@ -216,7 +238,16 @@ module Main_module(
             mem_st_data <= ALU_st_data; 
         end
     end
-    assign flush = mem_jmp | mem_branch_taken ; 
+    // halted: set when HLT reaches MEM, cleared only by reset. While HLT is in MEM and
+    // afterwards, younger instructions are flushed and the PC is held.
+    reg halted;
+    always @(posedge clk or posedge reset) begin
+        if(reset)
+            halted <= 1'b0;
+        else if(mem_hlt)
+            halted <= 1'b1;
+    end
+    assign flush = mem_jmp | mem_branch_taken | mem_hlt | halted;
     wire [7:0] mem_output;
     
     //mem and writeback initialization
@@ -303,7 +334,7 @@ module Main_module(
 always @(posedge clk or posedge reset) begin
     if(reset)
         pc <= 8'b00000000;
-    else if(mem_hlt | pipeline_stall)
+    else if(mem_hlt | halted | pipeline_stall)
         pc <= pc; // hold
     else if(mem_jmp | mem_branch_taken)
         pc <= mem_ALU_results;
@@ -325,7 +356,8 @@ end
     .i_wb_addr(wb_out_addr),
     .i_wb_write(wb_out_write_reg),
     .o_muxA_select(alu_muxA_sel),
-    .o_muxB_select(alu_muxB_sel), 
+    .o_muxB_select(alu_muxB_sel),
+    .o_muxC_select(alu_muxC_sel),
     .o_pipeline_stall(pipeline_stall)
     );
     wire [15:0] counter; 
